@@ -11,6 +11,7 @@ const { connectDB } = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
+const logger = require('./utils/logger');
 
 const app = express();
 
@@ -35,8 +36,15 @@ app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
 
+// HTTP request logging
 if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
+  app.use(
+    morgan('dev', {
+      stream: {
+        write: (message) => logger.http(message.trim()),
+      },
+    })
+  );
 }
 
 // Serve uploaded avatars as static files
@@ -61,11 +69,15 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
-  console.log(`\n🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-  console.log(`📡 API: http://localhost:${PORT}/api/v1\n`);
+  logger.info('Server started', {
+    mode: process.env.NODE_ENV,
+    port: PORT,
+    apiBaseUrl: `http://localhost:${PORT}/api/v1`,
+  });
 });
 
 process.on('SIGTERM', () => {
+  logger.info('SIGTERM received, shutting down gracefully');
   server.close(() => process.exit(0));
 });
 

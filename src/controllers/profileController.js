@@ -3,10 +3,12 @@ const fs = require('fs');
 const sharp = require('sharp');
 const User = require('../models/User');
 const { asyncHandler } = require('../middleware/errorHandler');
+const logger = require('../utils/logger');
 
 // GET /api/v1/profile
 exports.getProfile = asyncHandler(async (req, res) => {
   const user = await User.findByPk(req.user.id);
+  logger.debug('Fetched user profile.', { userId: req.user.id });
   res.status(200).json({ success: true, user });
 });
 
@@ -31,12 +33,20 @@ exports.updateProfile = asyncHandler(async (req, res) => {
     returning: true,
   });
 
+  logger.info('User profile updated.', {
+    userId: req.user.id,
+    updatedFields: Object.keys(updates),
+  });
+
   res.status(200).json({ success: true, user });
 });
 
 // POST /api/v1/profile/avatar
 exports.uploadAvatar = asyncHandler(async (req, res) => {
   if (!req.file) {
+    logger.warn('Avatar upload attempted without file.', {
+      userId: req.user.id,
+    });
     return res.status(400).json({ success: false, message: 'No file uploaded.' });
   }
 
@@ -64,6 +74,11 @@ exports.uploadAvatar = asyncHandler(async (req, res) => {
     { where: { id: req.user.id }, returning: true }
   );
 
+  logger.info('User avatar updated.', {
+    userId: req.user.id,
+    avatar: avatarUrl,
+  });
+
   res.status(200).json({ success: true, user });
 });
 
@@ -79,6 +94,10 @@ exports.deleteAvatar = asyncHandler(async (req, res) => {
     { where: { id: req.user.id }, returning: true }
   );
 
+  logger.info('User avatar deleted.', {
+    userId: req.user.id,
+  });
+
   res.status(200).json({ success: true, user });
 });
 
@@ -87,10 +106,16 @@ exports.changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
   if (!currentPassword || !newPassword) {
+    logger.warn('Change password called with missing fields.', {
+      userId: req.user.id,
+    });
     return res.status(400).json({ success: false, message: 'Both current and new password are required.' });
   }
 
   if (newPassword.length < 8) {
+    logger.warn('New password did not meet length requirement.', {
+      userId: req.user.id,
+    });
     return res.status(400).json({ success: false, message: 'New password must be at least 8 characters.' });
   }
 
@@ -98,12 +123,19 @@ exports.changePassword = asyncHandler(async (req, res) => {
   const isMatch = await user.comparePassword(currentPassword);
 
   if (!isMatch) {
+    logger.warn('Incorrect current password during change password.', {
+      userId: req.user.id,
+    });
     return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
   }
 
   user.password = newPassword;
   user.refreshTokens = []; // log out all other sessions
   await user.save();
+
+  logger.info('User password changed.', {
+    userId: req.user.id,
+  });
 
   res.status(200).json({ success: true, message: 'Password changed successfully.' });
 });
@@ -113,6 +145,9 @@ exports.deleteAccount = asyncHandler(async (req, res) => {
   const { password } = req.body;
 
   if (!password) {
+    logger.warn('Delete account attempted without password.', {
+      userId: req.user.id,
+    });
     return res.status(400).json({ success: false, message: 'Password is required to delete account.' });
   }
 
@@ -120,6 +155,9 @@ exports.deleteAccount = asyncHandler(async (req, res) => {
   const isMatch = await user.comparePassword(password);
 
   if (!isMatch) {
+    logger.warn('Incorrect password provided for account deletion.', {
+      userId: req.user.id,
+    });
     return res.status(401).json({ success: false, message: 'Incorrect password.' });
   }
 
@@ -130,6 +168,10 @@ exports.deleteAccount = asyncHandler(async (req, res) => {
   }
 
   await user.destroy();
+
+  logger.info('User account deleted.', {
+    userId: req.user.id,
+  });
 
   res.clearCookie('refreshToken').status(200).json({ success: true, message: 'Account deleted successfully.' });
 });
