@@ -1,3 +1,5 @@
+const logger = require('../utils/logger');
+
 const errorHandler = (err, req, res, next) => {
   let statusCode = err.statusCode || 500;
   let message = err.message || 'Internal Server Error';
@@ -27,9 +29,15 @@ const errorHandler = (err, req, res, next) => {
     statusCode = 400;
   }
 
-  if (process.env.NODE_ENV === 'development') {
-    console.error('Error:', err);
-  }
+  logger.error('Request error handled', {
+    statusCode,
+    message,
+    name: err.name,
+    method: req.method,
+    url: req.originalUrl,
+    ip: req.ip,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+  });
 
   res.status(statusCode).json({
     success: false,
