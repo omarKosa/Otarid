@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: otarid-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: otarid_db
+      POSTGRES_USER: otarid_user
+      POSTGRES_PASSWORD: otarid_password
+    ports:
+      - "5444:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
