@@ -4,6 +4,7 @@ const User = require('../models/User');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken, sendTokenResponse } = require('../utils/jwt');
 const { sendPasswordResetEmail, sendWelcomeEmail } = require('../utils/email');
 const { asyncHandler } = require('../middleware/errorHandler');
+const logger = require('../utils/logger');
 
 // POST /api/v1/auth/register
 exports.register = asyncHandler(async (req, res) => {
@@ -11,19 +12,33 @@ exports.register = asyncHandler(async (req, res) => {
 
   const existing = await User.findOne({ where: { email } });
   if (existing) {
+    logger.warn('Registration attempted with existing email.', {
+      email,
+      ip: req.ip,
+    });
     return res.status(409).json({ success: false, message: 'Email already in use.' });
   }
 
   const user = await User.create({ name, email, password });
 
   // Send welcome email (non-blocking)
-  sendWelcomeEmail({ to: email, name }).catch(console.error);
+  sendWelcomeEmail({ to: email, name }).catch((err) => {
+    logger.warn('Failed to send welcome email.', {
+      email,
+      error: err.message,
+    });
+  });
 
   const accessToken = generateAccessToken(user.id);
   const refreshToken = generateRefreshToken(user.id);
 
   user.refreshTokens = [{ token: refreshToken, createdAt: new Date() }];
   await user.save();
+
+  logger.info('User registered successfully.', {
+    userId: user.id,
+    email: user.email,
+  });
 
   sendTokenResponse(res, 201, user.toSafeJSON(), accessToken, refreshToken);
 });
@@ -36,10 +51,18 @@ exports.login = asyncHandler(async (req, res) => {
   const user = await User.scope('withSecrets').findOne({ where: { email } });
 
   if (!user || !(await user.comparePassword(password))) {
+    logger.warn('Invalid login attempt.', {
+      email,
+      ip: req.ip,
+    });
     return res.status(401).json({ success: false, message: 'Invalid email or password.' });
   }
 
   if (!user.isActive) {
+    logger.warn('Inactive user attempted login.', {
+      userId: user.id,
+      email: user.email,
+    });
     return res.status(403).json({ success: false, message: 'Account has been deactivated.' });
   }
 
@@ -49,6 +72,11 @@ exports.login = asyncHandler(async (req, res) => {
   const tokens = [...(user.refreshTokens || []), { token: refreshToken, createdAt: new Date() }];
   user.refreshTokens = tokens.slice(-5); // keep latest 5
   await user.save();
+
+  logger.info('User login successful.', {
+    userId: user.id,
+    email: user.email,
+  });
 
   sendTokenResponse(res, 200, user.toSafeJSON(), accessToken, refreshToken);
 });
@@ -62,6 +90,9 @@ exports.logout = asyncHandler(async (req, res) => {
     if (user) {
       user.refreshTokens = (user.refreshTokens || []).filter((t) => t.token !== refreshToken);
       await user.save();
+      logger.info('User logged out.', {
+        userId: user.id,
+      });
     }
   }
 
@@ -73,18 +104,28 @@ exports.refreshToken = asyncHandler(async (req, res) => {
   const token = req.cookies?.refreshToken || req.body?.refreshToken;
 
   if (!token) {
+    logger.warn('Refresh token missing.', {
+      path: req.originalUrl,
+      ip: req.ip,
+    });
     return res.status(401).json({ success: false, message: 'No refresh token provided.' });
   }
 
   let decoded;
   try {
     decoded = verifyRefreshToken(token);
-  } catch {
+  } catch (err) {
+    logger.warn('Invalid or expired refresh token.', {
+      error: err.message,
+    });
     return res.status(401).json({ success: false, message: 'Invalid or expired refresh token.' });
   }
 
   const user = await User.scope('withSecrets').findByPk(decoded.id);
   if (!user || !(user.refreshTokens || []).some((t) => t.token === token)) {
+    logger.warn('Refresh token not recognised.', {
+      userId: decoded.id,
+    });
     return res.status(401).json({ success: false, message: 'Refresh token not recognised.' });
   }
 
@@ -97,6 +138,10 @@ exports.refreshToken = asyncHandler(async (req, res) => {
   ];
   await user.save();
 
+  logger.info('Refresh token rotated.', {
+    userId: user.id,
+  });
+
   sendTokenResponse(res, 200, user.toSafeJSON(), newAccessToken, newRefreshToken);
 });
 
@@ -106,6 +151,10 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 
   // Always 200 — prevents email enumeration
   if (!user) {
+    logger.info('Password reset requested for non-existing email.', {
+      email: req.body.email,
+      ip: req.ip,
+    });
     return res.status(200).json({ success: true, message: 'If that email exists, a reset link has been sent.' });
   }
 
@@ -114,10 +163,19 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 
   try {
     await sendPasswordResetEmail({ to: user.email, name: user.name, resetToken });
-  } catch {
+    logger.info('Password reset email sent.', {
+      userId: user.id,
+      email: user.email,
+    });
+  } catch (err) {
     user.passwordResetToken = null;
     user.passwordResetExpires = null;
     await user.save();
+    logger.error('Failed to send password reset email.', {
+      userId: user.id,
+      email: user.email,
+      error: err.message,
+    });
     return res.status(500).json({ success: false, message: 'Failed to send reset email.' });
   }
 
@@ -136,6 +194,9 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   });
 
   if (!user) {
+    logger.warn('Invalid or expired password reset token.', {
+      token: req.params.token,
+    });
     return res.status(400).json({ success: false, message: 'Token is invalid or has expired.' });
   }
 
@@ -144,6 +205,10 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   user.passwordResetExpires = null;
   user.refreshTokens = []; // invalidate all sessions
   await user.save();
+
+  logger.info('Password reset successfully.', {
+    userId: user.id,
+  });
 
   res.status(200).json({ success: true, message: 'Password reset successful. Please log in.' });
 });
