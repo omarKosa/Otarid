@@ -25,7 +25,7 @@ const sendPasswordResetEmail = async ({ to, name, resetToken }) => {
         <p>Hi ${name},</p>
         <p>You requested a password reset. Click the button below — it expires in <strong>10 minutes</strong>.</p>
         <a href="${resetUrl}"
-           style="display:inline-block;padding:12px 24px;background:#4F46E5;color:#fff;
+          style="display:inline-block;padding:12px 24px;background:#4F46E5;color:#fff;
                   text-decoration:none;border-radius:6px;font-weight:bold;">
           Reset Password
         </a>
@@ -46,7 +46,7 @@ const sendWelcomeEmail = async ({ to, name }) => {
     subject: 'Welcome! Your account is ready.',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Welcome, ${name}! 🎉</h2>
+        <h2>Welcome, ${name}! </h2>
         <p>Your account has been created successfully. You can now log in and manage your profile.</p>
       </div>
     `,

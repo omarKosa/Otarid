@@ -12,7 +12,7 @@ const User = sequelize.define(
       primaryKey: true,
     },
     name: {
-      type: DataTypes.STRING(50),
+      type: DataTypes.STRING(20),
       allowNull: false,
       validate: {
         notEmpty: { msg: 'Name is required' },
@@ -57,7 +57,8 @@ const User = sequelize.define(
     },
     passwordResetToken: {
       type: DataTypes.STRING,
-      allowNull: true,
+  
+    allowNull: true,
     },
     passwordResetExpires: {
       type: DataTypes.DATE,
@@ -84,7 +85,7 @@ const User = sequelize.define(
   }
 );
 
-// ─── Hooks ────────────────────────────────────────────────────────────────────
+// ─── Hooks ───
 
 // Hash password before saving
 User.addHook('beforeSave', async (user) => {

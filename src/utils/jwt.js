@@ -28,7 +28,7 @@ const sendTokenResponse = (res, statusCode, user, accessToken, refreshToken) => 
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     })
     .json({ success: true, accessToken, user });
 };

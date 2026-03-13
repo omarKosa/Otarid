@@ -9,13 +9,13 @@ const { validate, registerRules, loginRules, forgotPasswordRules, resetPasswordR
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
-  message: { success: false, message: 'Too many attempts. Please try again later.' },
+  message: { success: false, message: 'try again after 15 minutes.' },
 });
 
 const passwordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5,
-  message: { success: false, message: 'Too many password reset attempts. Please try again later.' },
+  message: { success: false, message: 'try again after an hour.' },
 });
 
 // Public
