@@ -2,25 +2,26 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
-const { register, login, logout, refreshToken, forgotPassword, resetPassword, getMe } = require('../controllers/authController');
-const { protect } = require('../middleware/auth');
-const { validate, registerRules, loginRules, forgotPasswordRules, resetPasswordRules } = require('../middleware/validators');
+const { register, login, logout, refreshToken, forgotPassword, resetPassword, getMe, googleLogin } = require('../controllers/authController');
+const { protect } = require('../../Otarid/src/middleware/auth');
+const { validate, registerRules, loginRules, forgotPasswordRules, resetPasswordRules } = require('../../Otarid/src/middleware/validators');
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
-  message: { success: false, message: 'try again after 15 minutes.' },
+  message: { success: false, message: 'Too many attempts. Please try again later.' },
 });
 
 const passwordLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5,
-  message: { success: false, message: 'try again after an hour.' },
+  message: { success: false, message: 'Too many password reset attempts. Please try again later.' },
 });
 
 // Public
 router.post('/register', authLimiter, registerRules, validate, register);
 router.post('/login', authLimiter, loginRules, validate, login);
+router.post('/google', googleLogin);
 router.post('/refresh-token', refreshToken);
 router.post('/forgot-password', passwordLimiter, forgotPasswordRules, validate, forgotPassword);
 router.patch('/reset-password/:token', passwordLimiter, resetPasswordRules, validate, resetPassword);

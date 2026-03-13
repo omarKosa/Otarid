@@ -1,10 +1,12 @@
 const crypto = require('crypto');
 const { Op } = require('sequelize');
-const User = require('../models/User');
-const { generateAccessToken, generateRefreshToken, verifyRefreshToken, sendTokenResponse } = require('../utils/jwt');
-const { sendPasswordResetEmail, sendWelcomeEmail } = require('../utils/email');
-const { asyncHandler } = require('../middleware/errorHandler');
-const logger = require('../utils/logger');
+const { OAuth2Client } = require('google-auth-library');
+const User = require('../../Otarid/src/models/User');
+const GoogleUser = require('../models/GoogleUser');
+const { generateAccessToken, generateRefreshToken, verifyRefreshToken, sendTokenResponse } = require('../../Otarid/src/utils/jwt');
+const { sendPasswordResetEmail, sendWelcomeEmail } = require('../../Otarid/src/utils/email');
+const { asyncHandler } = require('../../Otarid/src/middleware/errorHandler');
+const logger = require('../../Otarid/src/utils/logger');
 
 // POST /api/v1/auth/register
 exports.register = asyncHandler(async (req, res) => {
@@ -74,6 +76,89 @@ exports.login = asyncHandler(async (req, res) => {
   await user.save();
 
   logger.info('User login successful.', {
+    userId: user.id,
+    email: user.email,
+  });
+
+  sendTokenResponse(res, 200, user.toSafeJSON(), accessToken, refreshToken);
+});
+
+// POST /api/v1/auth/google
+exports.googleLogin = asyncHandler(async (req, res) => {
+  const { credential } = req.body;
+
+  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || '387721482715-38qo7e5qve8c2d4t6kd8vup2m6fde9a9.apps.googleusercontent.com');
+  const ticket = await client.verifyIdToken({
+    idToken: credential,
+    audience: client._clientId,
+  });
+  const payload = ticket.getPayload();
+
+  const { sub: googleId, email, name, picture } = payload;
+
+  // Check if Google user exists
+  let googleUser = await GoogleUser.findOne({ where: { googleId } });
+
+  if (googleUser) {
+    // Google user exists, get the associated User
+    const user = await User.findByPk(googleUser.userId);
+    if (!user || !user.isActive) {
+      return res.status(403).json({ success: false, message: 'Account has been deactivated.' });
+    }
+
+    const accessToken = generateAccessToken(user.id);
+    const refreshToken = generateRefreshToken(user.id);
+
+    const tokens = [...(user.refreshTokens || []), { token: refreshToken, createdAt: new Date() }];
+    user.refreshTokens = tokens.slice(-5);
+    await user.save();
+
+    logger.info('Google user login successful.', {
+      userId: user.id,
+      email: user.email,
+    });
+
+    return sendTokenResponse(res, 200, user.toSafeJSON(), accessToken, refreshToken);
+  }
+
+  // Check if email already exists in User table
+  let user = await User.findOne({ where: { email } });
+
+  if (!user) {
+    // Create new User
+    user = await User.create({
+      name,
+      email,
+      password: crypto.randomBytes(32).toString('hex'), // random password since Google login
+    });
+  }
+
+  // Create GoogleUser linked to User
+  googleUser = await GoogleUser.create({
+    googleId,
+    email,
+    name,
+    picture,
+    userId: user.id,
+  });
+
+  // Send welcome email if new user
+  if (user.createdAt.getTime() === user.updatedAt.getTime()) {
+    sendWelcomeEmail({ to: email, name }).catch((err) => {
+      logger.warn('Failed to send welcome email.', {
+        email,
+        error: err.message,
+      });
+    });
+  }
+
+  const accessToken = generateAccessToken(user.id);
+  const refreshToken = generateRefreshToken(user.id);
+
+  user.refreshTokens = [{ token: refreshToken, createdAt: new Date() }];
+  await user.save();
+
+  logger.info('Google user registered and logged in.', {
     userId: user.id,
     email: user.email,
   });

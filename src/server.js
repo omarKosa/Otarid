@@ -7,11 +7,14 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const fs = require('fs');
 
-const { connectDB } = require('./config/database');
+const { connectDB } = require('../Otarid/src/config/database');
 const authRoutes = require('./routes/authRoutes');
-const profileRoutes = require('./routes/profileRoutes');
-const { errorHandler } = require('./middleware/errorHandler');
-const logger = require('./utils/logger');
+const profileRoutes = require('../Otarid/src/routes/profileRoutes');
+const { errorHandler } = require('../Otarid/src/middleware/errorHandler');
+const logger = require('../Otarid/src/utils/logger');
+
+// Load models and relations
+require('./models/relations');
 
 const app = express();
 
