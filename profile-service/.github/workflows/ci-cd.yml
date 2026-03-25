@@ -1,0 +1,36 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      # Optional: Build Docker image
+      # - name: Build Docker image
+      #   run: docker build -t otarid .
+
+      # Optional: Deploy step (to Heroku, Azure, AWS, etc.)
+      # - name: Deploy
+      #   run: echo "Deploy step here"
