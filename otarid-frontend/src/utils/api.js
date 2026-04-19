@@ -1,6 +1,4 @@
-const BASE = '/api/v1';
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
+const BASE = process.env.REACT_APP_API_URL || '/api';
 
 const getToken = () => localStorage.getItem('accessToken');
 
@@ -14,8 +12,6 @@ const handle = async (res) => {
   if (!data.success) throw new Error(data.message || 'Something went wrong');
   return data;
 };
-
-// ── Auth ─────────────────────────────────────────────────────────────────────
 
 export const register = (body) =>
   fetch(`${BASE}/auth/register`, {
@@ -59,23 +55,12 @@ export const forgotPassword = (email) =>
     body: JSON.stringify({ email }),
   }).then(handle);
 
-<<<<<<< HEAD
 export const resetPassword = (token, password) =>
   fetch(`${BASE}/auth/reset-password/${token}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password }),
-=======
-export const googleLogin = (credential) =>
-  fetch(`${BASE}/auth/google`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ credential }),
->>>>>>> af6c0fe4b6eab6a3480ccf0984b01a4beec8b67c
   }).then(handle);
-
-// ── Profile ───────────────────────────────────────────────────────────────────
 
 export const getProfile = () =>
   fetch(`${BASE}/profile`, {
@@ -96,7 +81,7 @@ export const uploadAvatar = (file) => {
   formData.append('avatar', file);
   return fetch(`${BASE}/profile/avatar`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${getToken()}` }, // no Content-Type for FormData
+    headers: { Authorization: `Bearer ${getToken()}` },
     credentials: 'include',
     body: formData,
   }).then(handle);
@@ -110,7 +95,7 @@ export const deleteAvatar = () =>
   }).then(handle);
 
 export const changePassword = (body) =>
-  fetch(`${BASE}/profile/change-password`, {
+  fetch(`${BASE}/auth/change-password`, {
     method: 'PATCH',
     headers: authHeaders(),
     credentials: 'include',
@@ -118,7 +103,7 @@ export const changePassword = (body) =>
   }).then(handle);
 
 export const deleteAccount = (password) =>
-  fetch(`${BASE}/profile/delete-account`, {
+  fetch(`${BASE}/auth/delete-account`, {
     method: 'DELETE',
     headers: authHeaders(),
     credentials: 'include',

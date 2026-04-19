@@ -23,13 +23,29 @@ app.use(morgan("dev")); // logs every request: METHOD /path STATUS ms
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100,
-  message: { success: false, message: "Too many requests, slow down." },
+  handler: (req, res) => {
+    const retryAfterSeconds = req.rateLimit.resetTime ? Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000) : 900;
+    res.status(429).json({ 
+      success: false, 
+      message: 'Too many requests from this IP address.',
+      retryAfterSeconds: retryAfterSeconds,
+      retryAt: new Date(req.rateLimit.resetTime || Date.now() + 15 * 60 * 1000).toISOString(),
+    });
+  },
 });
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  message: { success: false, message: "Too many auth attempts." },
+  handler: (req, res) => {
+    const retryAfterSeconds = req.rateLimit.resetTime ? Math.ceil((req.rateLimit.resetTime - Date.now()) / 1000) : 900;
+    res.status(429).json({ 
+      success: false, 
+      message: 'Too many authentication attempts.',
+      retryAfterSeconds: retryAfterSeconds,
+      retryAt: new Date(req.rateLimit.resetTime || Date.now() + 15 * 60 * 1000).toISOString(),
+    });
+  },
 });
 
 app.use(globalLimiter);
@@ -49,9 +65,8 @@ const requireAuth = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    // Forward user info to downstream service as a header
-    req.headers["x-user-id"]   = decoded.id;
-    req.headers["x-user-role"] = decoded.role;
+    req.headers["x-user-id"] = decoded.id;
+    req.headers["x-user-role"] = decoded.role || "user";
     next();
   } catch (err) {
     return res.status(401).json({ success: false, message: "Invalid or expired token." });
@@ -111,6 +126,21 @@ app.use(
   })
 );
 
+// Public static files (avatars) served by profile-service
+app.use(
+  "/uploads",
+  createProxyMiddleware({
+    target: PROFILE_SERVICE,
+    changeOrigin: true,
+    on: {
+      error: (err, req, res) => {
+        console.error("[Gateway] Profile uploads proxy error:", err.message);
+        res.status(502).json({ success: false, message: "Profile service unavailable." });
+      },
+    },
+  })
+);
+
 // ─── 404 for unknown routes ───────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found.` });
@@ -118,7 +148,7 @@ app.use((req, res) => {
 
 // ─── Start ────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`🚀 API Gateway running on port ${PORT}`);
-  console.log(`   → Auth Service:    ${AUTH_SERVICE}`);
-  console.log(`   → Profile Service: ${PROFILE_SERVICE}`);
+  console.log(`API Gateway running on port ${PORT}`);
+  console.log(`Auth Service:    ${AUTH_SERVICE}`);
+  console.log(`Profile Service: ${PROFILE_SERVICE}`);
 });

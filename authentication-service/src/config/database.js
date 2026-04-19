@@ -10,13 +10,9 @@ const sequelize = new Sequelize(
     port: parseInt(process.env.DB_PORT, 10) || 5432,
     dialect: 'postgres',
     logging:
-      process.env.NODE_ENV === 'development'
-        ? (msg) => logger.debug(msg, { source: 'sequelize' })
-        : false,
+      process.env.NODE_ENV === 'development' ? (msg) => logger.debug(msg, { source: 'sequelize' }) : false,
     dialectOptions:
-      process.env.DB_SSL === 'true'
-        ? { ssl: { require: true, rejectUnauthorized: false } }
-        : {},
+      process.env.DB_SSL === 'true' ? { ssl: { require: true, rejectUnauthorized: false } } : {},
     pool: {
       max: 10,
       min: 0,
@@ -34,7 +30,6 @@ const connectDB = async () => {
       database: process.env.DB_NAME,
     });
 
-    // Auto-create/update tables in development
     if (process.env.NODE_ENV !== 'production') {
       await sequelize.sync({ alter: true });
       logger.info('Database models synced.');

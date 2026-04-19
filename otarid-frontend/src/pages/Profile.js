@@ -6,7 +6,7 @@ import Button from '../components/Button';
 import Toast from '../components/Toast';
 import { updateProfile, uploadAvatar, deleteAvatar, changePassword, deleteAccount } from '../utils/api';
 
-const AVATAR_BASE = 'http://localhost:5000';
+const AVATAR_BASE = process.env.REACT_APP_GATEWAY_URL || 'http://localhost:3000';
 
 function Section({ title, children, delay = 0 }) {
   return (
@@ -323,7 +323,7 @@ export default function Profile() {
         </Section>
 
         {/* ── Danger zone ── */}
-        <Section title="Danger Zone" delay={4}>
+        <Section delay={4}>
           {!confirmDelete ? (
             <div>
               <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '16px' }}>

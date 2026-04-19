@@ -3,10 +3,11 @@ const { Op } = require('sequelize');
 const User = require('../models/User');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken, sendTokenResponse } = require('../utils/jwt');
 const { sendPasswordResetEmail, sendWelcomeEmail } = require('../utils/email');
+const { bootstrapProfile, deleteProfileRemote } = require('../utils/profileClient');
+const { publishEvent } = require('../utils/publisher');
 const { asyncHandler } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 
-// POST /api/v1/auth/register
 exports.register = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
 
@@ -21,15 +22,30 @@ exports.register = asyncHandler(async (req, res) => {
 
   const user = await User.create({ name, email, password });
 
-  // Send welcome email (non-blocking)
-  sendWelcomeEmail({ to: email, name }).catch((err) => {
-    logger.warn('Failed to send welcome email.', {
-      email,
+  try {
+    await bootstrapProfile({ userId: user.id, name: user.name, email: user.email });
+  } catch (err) {
+    await user.destroy();
+    throw err;
+  }
+
+  try {
+    await publishEvent('user.registered', {
+      email: user.email,
+      name: user.name,
+      userId: user.id,
+    });
+  } catch (err) {
+    logger.warn('RabbitMQ publish failed for user.registered. Falling back to direct welcome email.', {
+      userId: user.id,
+      email: user.email,
       error: err.message,
     });
-  });
 
-  const accessToken = generateAccessToken(user.id);
+    await sendWelcomeEmail({ to: email, name });
+  }
+
+  const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user.id);
 
   user.refreshTokens = [{ token: refreshToken, createdAt: new Date() }];
@@ -43,11 +59,9 @@ exports.register = asyncHandler(async (req, res) => {
   sendTokenResponse(res, 201, user.toSafeJSON(), accessToken, refreshToken);
 });
 
-// POST /api/v1/auth/login
 exports.login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // withSecrets scope includes the password column
   const user = await User.scope('withSecrets').findOne({ where: { email } });
 
   if (!user || !(await user.comparePassword(password))) {
@@ -66,11 +80,11 @@ exports.login = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Account has been deactivated.' });
   }
 
-  const accessToken = generateAccessToken(user.id);
+  const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user.id);
 
   const tokens = [...(user.refreshTokens || []), { token: refreshToken, createdAt: new Date() }];
-  user.refreshTokens = tokens.slice(-5); // keep latest 5
+  user.refreshTokens = tokens.slice(-5);
   await user.save();
 
   logger.info('User login successful.', {
@@ -81,7 +95,6 @@ exports.login = asyncHandler(async (req, res) => {
   sendTokenResponse(res, 200, user.toSafeJSON(), accessToken, refreshToken);
 });
 
-// POST /api/v1/auth/logout
 exports.logout = asyncHandler(async (req, res) => {
   const { refreshToken } = req.cookies;
 
@@ -99,7 +112,6 @@ exports.logout = asyncHandler(async (req, res) => {
   res.clearCookie('refreshToken').status(200).json({ success: true, message: 'Logged out successfully.' });
 });
 
-// POST /api/v1/auth/refresh-token
 exports.refreshToken = asyncHandler(async (req, res) => {
   const token = req.cookies?.refreshToken || req.body?.refreshToken;
 
@@ -129,7 +141,7 @@ exports.refreshToken = asyncHandler(async (req, res) => {
     return res.status(401).json({ success: false, message: 'Refresh token not recognised.' });
   }
 
-  const newAccessToken = generateAccessToken(user.id);
+  const newAccessToken = generateAccessToken(user);
   const newRefreshToken = generateRefreshToken(user.id);
 
   user.refreshTokens = [
@@ -145,11 +157,9 @@ exports.refreshToken = asyncHandler(async (req, res) => {
   sendTokenResponse(res, 200, user.toSafeJSON(), newAccessToken, newRefreshToken);
 });
 
-// POST /api/v1/auth/forgot-password
 exports.forgotPassword = asyncHandler(async (req, res) => {
   const user = await User.scope('withSecrets').findOne({ where: { email: req.body.email } });
 
-  // Always 200 — prevents email enumeration
   if (!user) {
     logger.info('Password reset requested for non-existing email.', {
       email: req.body.email,
@@ -161,28 +171,47 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   const resetToken = user.createPasswordResetToken();
   await user.save();
 
+  const resetUrl = `${process.env.CLIENT_URL}/reset-password/${resetToken}`;
+
   try {
-    await sendPasswordResetEmail({ to: user.email, name: user.name, resetToken });
-    logger.info('Password reset email sent.', {
+    await publishEvent('password.reset', {
+      email: user.email,
+      name: user.name,
+      resetUrl,
+    });
+    logger.info('Password reset event published.', {
       userId: user.id,
       email: user.email,
     });
   } catch (err) {
-    user.passwordResetToken = null;
-    user.passwordResetExpires = null;
-    await user.save();
-    logger.error('Failed to send password reset email.', {
+    logger.warn('RabbitMQ publish failed for password.reset. Sending email directly.', {
       userId: user.id,
       email: user.email,
       error: err.message,
     });
-    return res.status(500).json({ success: false, message: 'Failed to send reset email.' });
+
+    try {
+      await sendPasswordResetEmail({ to: user.email, name: user.name, resetToken });
+      logger.info('Password reset email sent directly.', {
+        userId: user.id,
+        email: user.email,
+      });
+    } catch (emailErr) {
+      user.passwordResetToken = null;
+      user.passwordResetExpires = null;
+      await user.save();
+      logger.error('Failed to send password reset email.', {
+        userId: user.id,
+        email: user.email,
+        error: emailErr.message,
+      });
+      return res.status(500).json({ success: false, message: 'Failed to send reset email.' });
+    }
   }
 
   res.status(200).json({ success: true, message: 'If that email exists, a reset link has been sent.' });
 });
 
-// PATCH /api/v1/auth/reset-password/:token
 exports.resetPassword = asyncHandler(async (req, res) => {
   const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
 
@@ -203,7 +232,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   user.password = req.body.password;
   user.passwordResetToken = null;
   user.passwordResetExpires = null;
-  user.refreshTokens = []; // invalidate all sessions
+  user.refreshTokens = [];
   await user.save();
 
   logger.info('Password reset successfully.', {
@@ -213,7 +242,61 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: 'Password reset successful. Please log in.' });
 });
 
-// GET /api/v1/auth/me
 exports.getMe = asyncHandler(async (req, res) => {
-  res.status(200).json({ success: true, user: req.user });
+  res.status(200).json({ success: true, user: req.user.toSafeJSON() });
+});
+
+exports.changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  const user = await User.scope('withSecrets').findByPk(req.user.id);
+  const isMatch = await user.comparePassword(currentPassword);
+
+  if (!isMatch) {
+    logger.warn('Incorrect current password during change password.', {
+      userId: req.user.id,
+    });
+    return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+  }
+
+  user.password = newPassword;
+  user.refreshTokens = [];
+  await user.save();
+
+  logger.info('User password changed.', {
+    userId: user.id,
+  });
+
+  res.status(200).json({ success: true, message: 'Password changed successfully.' });
+});
+
+exports.deleteAccount = asyncHandler(async (req, res) => {
+  const { password } = req.body;
+
+  if (!password) {
+    logger.warn('Delete account attempted without password.', {
+      userId: req.user.id,
+    });
+    return res.status(400).json({ success: false, message: 'Password is required to delete account.' });
+  }
+
+  const user = await User.scope('withSecrets').findByPk(req.user.id);
+  const isMatch = await user.comparePassword(password);
+
+  if (!isMatch) {
+    logger.warn('Incorrect password provided for account deletion.', {
+      userId: req.user.id,
+    });
+    return res.status(401).json({ success: false, message: 'Incorrect password.' });
+  }
+
+  const userId = user.id;
+  await deleteProfileRemote(userId);
+  await user.destroy();
+
+  logger.info('User account deleted.', {
+    userId,
+  });
+
+  res.clearCookie('refreshToken').status(200).json({ success: true, message: 'Account deleted successfully.' });
 });

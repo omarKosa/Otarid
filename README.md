@@ -1,192 +1,185 @@
-# Profile Multi-service System
+# Otarid Microservices Platform
 
-A Node.js + express REST API for user profile management, with **PostgreSQL** database via **Sequelize** ORM.
+A Node.js microservices monorepo for authentication, user profiles, notifications, and a React frontend.
 
------
+## Overview
 
-## Tech Stack
+This repository includes:
+- `authentication-service/` — auth, registration, login, JWT tokens, password reset, and internal service auth.
+- `profile-service/` — profile CRUD, avatar uploads, profile metadata, and protected profile API.
+- `notification-service/` — RabbitMQ consumer for email notifications.
+- `api-gateway/` — gateway/proxy for the auth and profile services.
+- `otarid-frontend/` — React SPA for login, profile management, and password reset.
+- `shared/` — shared utilities and models used across services.
 
-- **Runtime:** Node.js
-- **Framework:** Express.js
-- **Database:** PostgreSQL
-- **ORM:** Sequelize
-- **Auth:** JWT (Access + Refresh Tokens)
-- **Password Hashing:** bcryptjs
-- **File Uploads:** Multer + Sharp
-- **Email:** Nodemailer
-- **Validation:** express-validator
-- **Security:** Helmet, CORS, express-rate-limit
+## Architecture
 
------
+The system is designed as a microservices stack:
+- `api-gateway` exposes a single entry point on `http://localhost:3000`
+- `authentication-service` runs on port `5001`
+- `profile-service` runs on port `5002`
+- `notification-service` runs on port `5003`
+- `auth-db` and `profile-db` are PostgreSQL databases managed by Docker Compose
+- RabbitMQ is expected to be available externally on `host.docker.internal:5672`
 
-## Project Structure
+## Services
 
-```
-auth-microservice/
-├── .env.example
-├── package.json
-├── src/
-│   ├── server.js
-│   ├── config/
-│   │   └── database.js
-│   ├── controllers/
-│   │   ├── authController.js
-│   │   └── profileController.js
-│   ├── middleware/
-│   │   ├── auth.js
-│   │   ├── errorHandler.js
-│   │   └── validators.js
-│   ├── models/
-│   │   └── User.js
-│   ├── routes/
-│   │   ├── authRoutes.js
-│   │   └── profileRoutes.js
-│   └── utils/
-│       ├── email.js
-│       ├── jwt.js
-│       └── upload.js
-```
+### `authentication-service`
+- Handles user registration, login, logout, refresh tokens
+- Issues JWT access tokens
+- Manages password reset emails
+- Communicates with `profile-service` and publishes events for notifications
 
------
+### `profile-service`
+- Manages user profiles and avatars
+- Protects profile routes with JWT authorization
+- Stores profile state in PostgreSQL
 
-## How To Run
+### `notification-service`
+- Subscribes to RabbitMQ events
+- Sends transactional emails via SMTP
 
-### 1. Install dependencies
+### `api-gateway`
+- Routes client requests to auth/profile services
+- Applies shared security, logging, and CORS policies
+
+### `otarid-frontend`
+- React frontend for authentication workflows and profile management
+- Consumes the gateway API
+
+## Quick Start with Docker Compose
+
+Requirements:
+- Docker
+- Docker Compose
+- External RabbitMQ broker available on `localhost:5672` (or `host.docker.internal:5672` from Docker)
+
+Start the full stack:
+
 ```bash
+docker compose up --build
+```
+
+This launches:
+- `auth-db` → PostgreSQL for authentication data
+- `profile-db` → PostgreSQL for profile data
+- `auth-service`
+- `profile-service`
+- `notification-service`
+- `api-gateway`
+
+Visit the frontend at `http://localhost:3000` once the stack is ready.
+
+## Local Development
+
+Each service has its own dependencies and `.env` file.
+
+Example workflow:
+
+```bash
+cd authentication-service
 npm install
-```
-
-### 2. Configure environment variables
-```bash
-cp .env.example .env
-```
-then open `.env` and fill in your values (env section is below).
-
-### 3. Create the PostgreSQL database
-```bash
-createdb auth_microservice
-```
-
-### 4. Start the development server
-```bash
 npm run dev
 ```
 
-on first boot, Sequelize will automatically create the `users` table. You will see:
-```
-✅ PostgreSQL connected successfully.
-✅ Database models synced.
-✅ Server running in development mode on port 5000
+```bash
+cd profile-service
+npm install
+npm run dev
 ```
 
-### 5. Start
 ```bash
+cd notification-service
+npm install
+npm run dev
+```
+
+```bash
+cd api-gateway
+npm install
+npm run dev
+```
+
+```bash
+cd otarid-frontend
+npm install
 npm start
 ```
 
----
+## Ports
 
-## ⚙️ Environment Variables
-
-Copy `.env.example` to `.env` and fill in the values below.
-
-| Variable | Description | Example |
+| Service | Local Port | Notes |
 |---|---|---|
-| `PORT` | Port the server runs on | `5000` |
-| `NODE_ENV` | Environment | `development` |
-| `DB_HOST` | PostgreSQL host | `localhost` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_NAME` | Database name | `auth_microservice` |
-| `DB_USER` | Database user | `postgres` |
-| `DB_PASSWORD` | Database password | `yourpassword` |
-| `DB_SSL` | Enable SSL for DB | `false` |
-| `JWT_SECRET` | Secret for access tokens | `changeme` |
-| `JWT_EXPIRE` | Access token expiry | `15m` |
-| `JWT_REFRESH_SECRET` | Secret for refresh tokens | `changeme` |
-| `JWT_REFRESH_EXPIRE` | Refresh token expiry | `7d` |
-| `SMTP_HOST` | SMTP server host | `smtp.mailtrap.io` |
-| `SMTP_PORT` | SMTP server port | `587` |
-| `SMTP_USER` | SMTP username | — |
-| `SMTP_PASS` | SMTP password | — |
-| `EMAIL_FROM` | Sender email address | `noreply@yourapp.com` |
-| `CLIENT_URL` | Your frontend URL | `http://localhost:3000` |
-| `UPLOAD_PATH` | Where avatars are stored | `./uploads` |
-| `MAX_FILE_SIZE` | Max upload size in bytes | `5242880` (5MB) |
+| `api-gateway` | `3000` | Frontend gateway |
+| `auth-service` | `5001` | Auth API |
+| `profile-service` | `5002` | Profile API |
+| `notification-service` | `5003` | Notification worker |
+| `auth-db` | `5432` | Auth PostgreSQL |
+| `profile-db` | `5433` | Profile PostgreSQL |
 
------
+## Environment Variables
 
-##  API Endpoints
+Each service loads environment variables from its own `.env` file.
 
-**Base URL:** `http://localhost:5000/api/v1`
+Common variables used by services include:
 
------
+- `PORT`
+- `NODE_ENV`
+- `DB_HOST`
+- `DB_PORT`
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASSWORD`
+- `AUTH_SERVICE_URL`
+- `PROFILE_SERVICE_URL`
+- `INTERNAL_API_KEY`
+- `RABBITMQ_URL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `EMAIL_FROM`
+- `CLIENT_URL`
 
+Follow each service folder for more detailed env variable names and examples.
+
+## API Gateway Endpoints
+
+The gateway proxies auth and profile endpoints through `http://localhost:3000`.
+
+| Method | Path | Purpose | Auth Required |
+|---|---|---|---|
+| `POST` | `/auth/register` | Register a new user | No |
+| `POST` | `/auth/login` | Log in and receive access token | No |
+| `POST` | `/auth/logout` | Log out and clear refresh session | Yes |
+| `POST` | `/auth/refresh-token` | Refresh access token | Yes (refresh cookie) |
+| `POST` | `/auth/forgot-password` | Request password reset email | No |
+| `PATCH` | `/auth/reset-password/:token` | Reset password using token | No |
+| `GET` | `/auth/me` | Get authenticated user info | Yes |
+| `GET` | `/profile` | Get current profile | Yes |
+| `PATCH` | `/profile` | Update profile data | Yes |
+| `POST` | `/profile/avatar` | Upload or replace avatar image | Yes |
+| `DELETE` | `/profile/avatar` | Remove profile avatar | Yes |
+| `PATCH` | `/profile/change-password` | Change account password | Yes |
+| `DELETE` | `/profile/delete-account` | Delete the user account | Yes |
+| `GET` | `/health` | Service health check | No |
+
+## Notes
+
+- The repo is a monorepo; services are isolated and can run independently.
+- `notification-service` relies on RabbitMQ events and does not expose public REST endpoints.
+- The `shared/` folder contains common models and utilities.
+- Frontend assets are contained in `otarid-frontend/` and can call the gateway at `http://localhost:3000`.
+
+## Testing
+
+Each service defines its own test scripts. For example:
+
+```bash
+cd profile-service
+npm run test
 ```
-| Method | Route | Purpose | Key Inputs | Response |
-|--------|-------|---------|------------|----------|
-| **Auth** | | | | |
-| `POST` | `/auth/register` | Create account | `name`, `email`, `password` | `201` · accessToken + user |
-| `POST` | `/auth/login` | Login | `email`, `password` | `200` · accessToken + user |
-| `POST` | `/auth/logout` | End session | — | `200` · clears refresh cookie |
-| `POST` | `/auth/refresh-token` | Renew access token | `refreshToken` (cookie or body) | `200` · new accessToken |
-| `POST` | `/auth/forgot-password` | Request reset email | `email` | `200` · always (anti-enum) |
-| `PATCH` | `/auth/reset-password/:token` | Set new password | `password`, reset token (URL) | `200` · success message |
-| `GET` | `/auth/me` | Get current user | Bearer token | `200` · user object |
-| **Profile** | | *(all require Bearer token)* | | |
-| `GET` | `/profile` | Fetch profile | — | `200` · profile object |
-| `PATCH` | `/profile` | Update profile | `name`?, `bio`?, `email`? | `200` · updated profile |
-| `POST` | `/profile/avatar` | Upload avatar | multipart · `avatar` (JPEG/PNG/WebP ≤5MB) | `200` · resized to 200×200 WebP |
-| `DELETE` | `/profile/avatar` | Remove avatar | — | `200` · avatar cleared |
-| `PATCH` | `/profile/change-password` | Change password | `currentPassword`, `newPassword` | `200` · other sessions logged out |
-| `DELETE` | `/profile/delete-account` | Delete account | `password` (confirmation) | `200` · account removed |
-| `GET` | `/health` | Health check | — | `200` · status + timestamp |
-```
 
------
+## License
 
-## Security Features
-
-- **Helmet** — sets secure HTTP response headers
-- **CORS** — only allows requests from `CLIENT_URL`
-- **Rate limiting** — 10 requests / 15 min on auth routes, 5 requests / hour on password reset
-- **bcryptjs** — passwords hashed with cost factor 12
-- **HttpOnly cookies** — refresh tokens stored in Secure, SameSite=Strict cookies
-- **Refresh token rotation** — tokens are rotated on every use; max 5 stored per user
-- **Session invalidation** — all refresh tokens are wiped on password change or reset
-- **Email enumeration protection** — forgot-password always returns 200
-- **Input validation** — all inputs validated with express-validator
-- **Body size limit** — JSON bodies capped at 10kb
-
----
-
-## Database
-
-PostgreSQL with Sequelize ORM. The `users` table is created automatically when you start the server in development mode (`NODE_ENV=development`).
-
-**Users table columns:**
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | UUID | Primary key, auto-generated |
-| `name` | VARCHAR(50) | Required |
-| `email` | VARCHAR | Required, unique |
-| `password` | VARCHAR | Hashed with bcrypt |
-| `avatar` | VARCHAR | Path to uploaded file |
-| `bio` | VARCHAR(200) | Optional |
-| `role` | ENUM | `user` or `admin` |
-| `isActive` | BOOLEAN | Default true |
-| `refreshTokens` | JSONB | Array of `{ token, createdAt }` |
-| `passwordResetToken` | VARCHAR | Hashed reset token |
-| `passwordResetExpires` | TIMESTAMP | 10 minute expiry |
-| `passwordChangedAt` | TIMESTAMP | Used to invalidate old JWTs |
-| `createdAt` | TIMESTAMP | Auto-managed |
-| `updatedAt` | TIMESTAMP | Auto-managed |
-
------
-
-## Scripts
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Start with nodemon (auto-restart on changes) |
-| `npm start` | Start in production mode |
+MIT

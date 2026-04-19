@@ -3,27 +3,22 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const morgan = require('morgan');
-const path = require('path');
-const fs = require('fs');
+const cookieParser = require('cookie-parser');
 
 const { connectDB } = require('./config/database');
 
 // Load models before connecting to DB and syncing
-const Profile = require('./models/Profile');
+const User = require('./models/User');
 
-const profileRoutes = require('./routes/profileRoutes');
+const authRoutes = require('./routes/authRoutes');
 const internalRoutes = require('./routes/internalRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
+const { connectPublisher } = require('./utils/publisher');
 
 const app = express();
 
 connectDB();
-
-const uploadDir = process.env.UPLOAD_PATH || './uploads';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
 
 app.use(helmet());
 app.use(
@@ -35,6 +30,7 @@ app.use(
 
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(cookieParser());
 
 if (process.env.NODE_ENV === 'development') {
   app.use(
@@ -46,10 +42,8 @@ if (process.env.NODE_ENV === 'development') {
   );
 }
 
-app.use('/uploads', express.static(path.resolve(uploadDir)));
-
+app.use('/api/auth', authRoutes);
 app.use('/internal', internalRoutes);
-app.use('/api/profile', profileRoutes);
 
 app.get('/health', (req, res) => {
   res.status(200).json({ success: true, status: 'healthy', timestamp: new Date().toISOString() });
@@ -61,13 +55,21 @@ app.use((req, res) => {
 
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5002;
-const server = app.listen(PORT, () => {
-  logger.info('Profile service started', {
+const PORT = process.env.PORT || 5001;
+const server = app.listen(PORT, async () => {
+  logger.info('Authentication service started', {
     mode: process.env.NODE_ENV,
     port: PORT,
-    apiBaseUrl: `http://localhost:${PORT}/api/profile`,
+    apiBaseUrl: `http://localhost:${PORT}/api/auth`,
   });
+
+  try {
+    await connectPublisher();
+  } catch (err) {
+    logger.warn('RabbitMQ publisher unavailable. Events will not be published until the connection is restored.', {
+      error: err.message,
+    });
+  }
 });
 
 process.on('SIGTERM', () => {

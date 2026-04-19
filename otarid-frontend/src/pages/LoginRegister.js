@@ -1,19 +1,11 @@
-<<<<<<< HEAD
-import React, { useState } from 'react';
-=======
 import React, { useState, useEffect } from 'react';
->>>>>>> af6c0fe4b6eab6a3480ccf0984b01a4beec8b67c
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import AuthLayout from '../components/AuthLayout';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import Toast from '../components/Toast';
-<<<<<<< HEAD
 import { login, register } from '../utils/api';
-=======
-import { login, register, googleLogin } from '../utils/api';
->>>>>>> af6c0fe4b6eab6a3480ccf0984b01a4beec8b67c
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginRegister() {
@@ -26,32 +18,6 @@ export default function LoginRegister() {
   const { loginUser } = useAuth();
   const navigate = useNavigate();
 
-<<<<<<< HEAD
-=======
-  useEffect(() => {
-    if (window.google) {
-      window.google.accounts.id.initialize({
-        client_id: '387721482715-38qo7e5qve8c2d4t6kd8vup2m6fde9a9.apps.googleusercontent.com',
-        callback: handleGoogleLogin,
-      });
-      window.google.accounts.id.renderButton(
-        document.getElementById('google-signin-button'),
-        { theme: 'outline', size: 'large' }
-      );
-    }
-  }, []);
-
-  const handleGoogleLogin = async (response) => {
-    try {
-      const data = await googleLogin(response.credential);
-      loginUser(data.accessToken, data.user);
-      navigate('/profile');
-    } catch (err) {
-      setToast({ message: err.message, type: 'error' });
-    }
-  };
-
->>>>>>> af6c0fe4b6eab6a3480ccf0984b01a4beec8b67c
   const set = (field) => (e) => {
     setForm(f => ({ ...f, [field]: e.target.value }));
     setErrors(e => ({ ...e, [field]: '' }));
@@ -181,13 +147,6 @@ export default function LoginRegister() {
           </Button>
         </div>
       </form>
-<<<<<<< HEAD
-=======
-
-      <div className="fade-up fade-up-delay-5" style={{ marginTop: '20px', textAlign: 'center' }}>
-        <div id="google-signin-button"></div>
-      </div>
->>>>>>> af6c0fe4b6eab6a3480ccf0984b01a4beec8b67c
     </AuthLayout>
   );
 }

@@ -1,38 +1,11 @@
 const { verifyAccessToken } = require('../utils/jwt');
-const Profile = require('../models/Profile');
+const User = require('../models/User');
 const logger = require('../utils/logger');
-
-const buildReqUser = (profile, req) => {
-  const p = profile.toJSON();
-  return {
-    id: p.userId,
-    name: p.name,
-    email: p.email,
-    bio: p.bio,
-    avatar: p.avatar,
-    role: req.headers['x-user-role'] || 'user',
-  };
-};
 
 const protect = async (req, res, next) => {
   try {
-    const headerUserId = req.headers['x-user-id'];
-
-    if (headerUserId) {
-      const profile = await Profile.findByPk(headerUserId);
-      if (!profile) {
-        logger.warn('Profile missing for gateway user.', { userId: headerUserId });
-        return res.status(404).json({ success: false, message: 'Profile not found.' });
-      }
-      req.user = buildReqUser(profile, req);
-      logger.debug('Authenticated via gateway header', {
-        userId: headerUserId,
-        path: req.originalUrl,
-      });
-      return next();
-    }
-
     let token;
+
     if (req.headers.authorization?.startsWith('Bearer ')) {
       token = req.headers.authorization.split(' ')[1];
     }
@@ -47,15 +20,39 @@ const protect = async (req, res, next) => {
     }
 
     const decoded = verifyAccessToken(token);
-    const profile = await Profile.findByPk(decoded.id);
 
-    if (!profile) {
-      return res.status(404).json({ success: false, message: 'Profile not found.' });
+    const user = await User.findByPk(decoded.id);
+
+    if (!user) {
+      logger.warn('Authenticated user no longer exists.', {
+        userId: decoded.id,
+        path: req.originalUrl,
+      });
+      return res.status(401).json({ success: false, message: 'User no longer exists.' });
     }
 
-    req.user = buildReqUser(profile, req);
+    if (!user.isActive) {
+      logger.warn('Inactive user attempted access.', {
+        userId: user.id,
+        path: req.originalUrl,
+      });
+      return res.status(403).json({ success: false, message: 'Account has been deactivated.' });
+    }
+
+    if (user.changedPasswordAfter(decoded.iat)) {
+      logger.warn('User token invalidated due to password change.', {
+        userId: user.id,
+        path: req.originalUrl,
+      });
+      return res.status(401).json({
+        success: false,
+        message: 'Password recently changed. Please log in again.',
+      });
+    }
+
+    req.user = user;
     logger.debug('Authenticated request', {
-      userId: profile.userId,
+      userId: user.id,
       path: req.originalUrl,
       method: req.method,
     });
