@@ -8,7 +8,12 @@ const authHeaders = () => ({
 });
 
 const handle = async (res) => {
-  const data = await res.json();
+  const contentType = res.headers.get('content-type') || '';
+  const data = contentType.includes('application/json')
+    ? await res.json()
+    : { success: false, message: await res.text() || `Request failed with status ${res.status}` };
+
+  if (!res.ok) throw new Error(data.message || `Request failed with status ${res.status}`);
   if (!data.success) throw new Error(data.message || 'Something went wrong');
   return data;
 };

@@ -16,7 +16,12 @@ const PROFILE_SERVICE = process.env.PROFILE_SERVICE_URL || "http://localhost:500
 
 // ─── Global Middleware ─────────────────────────────────────────
 app.use(helmet());
-app.use(cors({ origin: process.env.CLIENT_URL || "*" }));
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "http://localhost:3001",
+    credentials: true,
+  })
+);
 app.use(morgan("dev")); // logs every request: METHOD /path STATUS ms
 
 // ─── Rate Limiters ────────────────────────────────────────────

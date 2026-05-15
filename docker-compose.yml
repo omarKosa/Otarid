@@ -42,8 +42,21 @@ services:
 
   # ─── MESSAGE BROKER ───────────────────────────────────────────
 
-  # RabbitMQ is provided by an external container already bound on host port 5672.
-  # Services will connect to it through host.docker.internal.
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ─── SERVICES ─────────────────────────────────────────────────
 
@@ -59,6 +72,7 @@ services:
       DB_PASSWORD: postgres
       AUTH_SERVICE_URL: http://auth-service:5001
       INTERNAL_API_KEY: otarid_internal_dev_key
+      CLIENT_URL: http://localhost:3001
       PORT: 5002
     ports:
       - "5002:5002"
@@ -81,7 +95,8 @@ services:
       DB_PASSWORD: postgres
       PROFILE_SERVICE_URL: http://profile-service:5002
       INTERNAL_API_KEY: otarid_internal_dev_key
-      RABBITMQ_URL: amqp://guest:guest@host.docker.internal:5672
+      CLIENT_URL: http://localhost:3001
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
     ports:
       - "5001:5001"
     depends_on:
@@ -89,6 +104,8 @@ services:
         condition: service_healthy
       profile-service:
         condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
       - internal
     restart: on-failure
@@ -98,9 +115,12 @@ services:
     container_name: notification-service
     env_file: ./notification-service/.env
     environment:
-      RABBITMQ_URL: amqp://guest:guest@host.docker.internal:5672
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
     ports:
       - "5003:5003"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     networks:
       - internal
     restart: on-failure
@@ -112,6 +132,7 @@ services:
     environment:
       AUTH_SERVICE_URL: http://auth-service:5001
       PROFILE_SERVICE_URL: http://profile-service:5002
+      CLIENT_URL: http://localhost:3001
     ports:
       - "3000:3000"
     depends_on:
@@ -121,11 +142,36 @@ services:
       - internal
     restart: on-failure
 
+  frontend:
+    image: node:20-alpine
+    container_name: otarid-frontend
+    working_dir: /app
+    command: sh -c "npm install && npm start"
+    environment:
+      PORT: 3001
+      HOST: 0.0.0.0
+      WDS_SOCKET_PORT: 3001
+      CHOKIDAR_USEPOLLING: "true"
+      REACT_APP_API_URL: http://localhost:3000/api
+      REACT_APP_GATEWAY_URL: http://localhost:3000
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./otarid-frontend:/app
+      - frontend-node-modules:/app/node_modules
+    depends_on:
+      - api-gateway
+    networks:
+      - internal
+    restart: on-failure
+
 # ─── VOLUMES ────────────────────────────────────────────────────
 
 volumes:
   auth-db-data:
   profile-db-data:
+  rabbitmq-data:
+  frontend-node-modules:
 
 
 # ─── NETWORKS ───────────────────────────────────────────────────
